@@ -17,13 +17,13 @@ This helps developers maintain a clear, uncluttered, and efficient view of the s
 
 ### System configuration
 
-* Operating system: 
-* Compiler: 
-* CUDA version (if applicable): 
-* CUDNN version (if applicable): 
-* BLAS: 
-* Python version (if using pycaffe): 
-* MATLAB version (if using matcaffe): 
+* Operating system:
+* Compiler:
+* CUDA version (if applicable):
+* CUDNN version (if applicable):
+* BLAS:
+* Python version (if using pycaffe):
+* MATLAB version (if using matcaffe):
 
 ### Issue checklist
 

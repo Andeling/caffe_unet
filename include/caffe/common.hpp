@@ -110,6 +110,15 @@ class Caffe {
 
   enum Brew { CPU, GPU };
 
+private:
+  static std::map<void*,size_t> gpuMemoryMap_;
+public:
+#ifndef CPU_ONLY
+  static cudaError_t mallocGPU(void **ptr, size_t mem);
+  static cudaError_t freeGPU(void *ptr);
+  static size_t getTotalAllocatedGPUMemory();
+#endif
+
   // This random number generator facade hides boost and CUDA rng
   // implementation from one another (for cross-platform compatibility).
   class RNG {

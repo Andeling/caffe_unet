@@ -322,6 +322,7 @@ function(caffe_parse_linker_libs Caffe_LINKER_LIBS_variable folders_var flags_va
       set(__varname "__optimized")
     elseif(list_elem MATCHES "^-framework[ \t]+([^ \t].*)")
       list(APPEND __framework -framework ${CMAKE_MATCH_1})
+    elseif(list_elem MATCHES "^(PRIVATE)|(PUBLIC)|(-fopenmp)")
     else()
       list(APPEND ${__varname} ${list_elem})
       set(__varname "__unspec")

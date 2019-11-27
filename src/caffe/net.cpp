@@ -4,6 +4,7 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <cstring>
 
 #ifdef USE_HDF5
 #include "hdf5.h"
@@ -17,18 +18,23 @@
 #include "caffe/util/hdf5.hpp"
 #include "caffe/util/insert_splits.hpp"
 #include "caffe/util/math_functions.hpp"
+#include "caffe/util/vector_helper.hpp"
 #include "caffe/util/upgrade_proto.hpp"
+
+#include "caffe/layers/base_conv_layer.hpp"
 
 namespace caffe {
 
 template <typename Dtype>
-Net<Dtype>::Net(const NetParameter& param) {
+Net<Dtype>::Net(const NetParameter& param, const Net* root_net)
+        : root_net_(root_net) {
   Init(param);
 }
 
 template <typename Dtype>
 Net<Dtype>::Net(const string& param_file, Phase phase,
-    const int level, const vector<string>* stages) {
+  const int level, const vector<string>* stages, const Net* root_net)
+        : root_net_(root_net){
   NetParameter param;
   ReadNetParamsFromTextFileOrDie(param_file, &param);
   // Set phase, stages and level
@@ -69,6 +75,9 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
   top_id_vecs_.resize(param.layer_size());
   bottom_need_backward_.resize(param.layer_size());
   for (int layer_id = 0; layer_id < param.layer_size(); ++layer_id) {
+    // For non-root solvers, whether this layer is shared from root_net_.
+    bool share_from_root = !Caffe::root_solver()
+        && root_net_->layers_[layer_id]->ShareInParallel();
     // Inherit phase from net if unset.
     if (!param.layer(layer_id).has_phase()) {
       param.mutable_layer(layer_id)->set_phase(phase_);
@@ -81,7 +90,14 @@ void Net<Dtype>::Init(const NetParameter& in_param) {
           << "propagate_down param must be specified "
           << "either 0 or bottom_size times ";
     }
-    layers_.push_back(LayerRegistry<Dtype>::CreateLayer(layer_param));
+    if (share_from_root) {
+      LOG(INFO) << "Sharing layer " << layer_param.name() << " from root net";
+      layers_.push_back(root_net_->layers_[layer_id]);
+      layers_[layer_id]->SetShared(true);
+    } else {
+      layers_.push_back(LayerRegistry<Dtype>::CreateLayer(layer_param));
+      layers_[layer_id]->set_parent_net( this);
+    }
     layer_names_.push_back(layer_param.name());
     LOG_IF(INFO, Caffe::root_solver())
         << "Creating Layer " << layer_param.name();
@@ -573,6 +589,12 @@ void Net<Dtype>::BackwardFromTo(int start, int end) {
     for (int c = 0; c < before_backward_.size(); ++c) {
       before_backward_[c]->run(i);
     }
+    VLOG(1) << "BackwardFromTo(" << start << "," << end
+            << "): processing layer " << i << " ("
+            << layers_[i]->layer_param().name() << "). "
+            << (layer_need_backward_[i] ? " backward computation required" :
+                "skip") << std::endl;
+
     if (layer_need_backward_[i]) {
       layers_[i]->Backward(
           top_vecs_[i], bottom_need_backward_[i], bottom_vecs_[i]);
@@ -828,8 +850,82 @@ void Net<Dtype>::CopyTrainedLayersFromHDF5(const string& trained_filename) {
               << source_layer_name;
         }
       }
+
+      // Save blob to keep initialization for potentially unused parts
+      Blob<Dtype> buf(target_blobs[j]->shape());
       hdf5_load_nd_dataset(layer_hid, dataset_name.c_str(), 0, kMaxBlobAxes,
-          target_blobs[j].get());
+                           &buf, true);
+      bool shapeChanged =
+          (buf.num_axes() != target_blobs[j]->num_axes());
+      for (size_t d = 0; !shapeChanged && d < buf.num_axes(); ++d)
+          shapeChanged |= (buf.shape(d) != target_blobs[j]->shape(d));
+
+      if (!shapeChanged) {
+        std::memcpy(target_blobs[j]->mutable_cpu_data(), buf.cpu_data(),
+                    buf.count() * sizeof(Dtype));
+      }
+      else {
+        if (buf.num_axes() == target_blobs[j]->num_axes()) {
+          int nKernelElements = 1;
+          if (boost::static_pointer_cast< BaseConvolutionLayer<Dtype> >(
+                  layers_[target_layer_id]) != NULL) {
+            if (buf.num_axes() == 4) {
+              for (size_t d = 2; d < buf.num_axes(); ++d) {
+                nKernelElements *= buf.shape(d);
+                if (buf.shape(d) != target_blobs[j]->shape(d)) {
+                  LOG(FATAL)
+                      << "Kernel shape for convolution layer "
+                      << source_layer_name << " does not match kernel shape "
+                      << "found in " << trained_filename << "\n"
+                      << "layer requires " << toString(target_blobs[j]->shape())
+                      << " - found " << toString(buf.shape());
+                }
+              }
+
+              // Silently extend/reduce the number of input/output channels for
+              // convolution layers if spatial kernel extends match. Fill
+              // additional dimensions using the selected filler
+              if (buf.shape(0) != target_blobs[j]->shape(0)) {
+                DLOG(INFO) << "Changing number of output channels of layer "
+                           << source_layer_name << " from "
+                           << buf.shape(0) << " (weights) to "
+                           << target_blobs[j]->shape(0) << " (model)";
+              }
+              if (buf.shape(1) != target_blobs[j]->shape(1)) {
+                DLOG(INFO) << "Changing number of input channels of layer "
+                           << source_layer_name << " from "
+                           << buf.shape(1) << " (weights) to "
+                           << target_blobs[j]->shape(1) << " (model)";
+              }
+              for (int cOut = 0; cOut < std::min(target_blobs[j]->shape(0),
+                                     buf.shape(0)); ++cOut) {
+                for (int cIn = 0; cIn < std::min(target_blobs[j]->shape(1),
+                                      buf.shape(1)); ++cIn) {
+                  std::memcpy(
+                      target_blobs[j]->mutable_cpu_data() +
+                      (cOut * target_blobs[j]->shape(1) + cIn) * nKernelElements,
+                      buf.cpu_data() +
+                      (cOut * buf.shape(1) + cIn) * nKernelElements,
+                      nKernelElements);
+                }
+              }
+            }
+            else {
+              for (int cOut = 0; cOut < std::min(target_blobs[j]->shape(0),
+                                                 buf.shape(0)); ++cOut) {
+                target_blobs[j]->mutable_cpu_data()[cOut] = buf.cpu_data()[cOut];
+              }
+            }
+          }
+        }
+        else {
+          LOG(FATAL) << "Shape of parameters for layer "
+                     << source_layer_name << " does not match shape of "
+                     << "parameters found in " << trained_filename << "\n"
+                     << "layer requires " << toString(target_blobs[j]->shape())
+                     << " - found " << toString(buf.shape());
+        }
+      }
     }
     H5Gclose(layer_hid);
   }

@@ -17,6 +17,7 @@ TODO:
 
 #include "caffe/layers/hdf5_data_layer.hpp"
 #include "caffe/util/hdf5.hpp"
+#include "caffe/util/vector_helper.hpp"
 
 namespace caffe {
 
@@ -96,6 +97,57 @@ void HDF5DataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   CHECK_GE(num_files_, 1) << "Must have at least 1 HDF5 filename listed in "
     << source;
 
+  // check the shapes of all datasets, if they are equal, and if the
+  // number of images per blob is divisible by the batch size
+  const int batch_size = this->layer_param_.hdf5_data_param().batch_size();
+  int num_datasets = top.size();
+  dataset_shapes_.resize( num_files_ * num_datasets);
+  files_have_consistent_shapes_ = true;
+  hdf_blobs_divisible_by_batch_size_ = true;
+  for (int fi = 0; fi < num_files_; ++fi) {
+    std::string msg;
+    std::string filename = hdf_filenames_[fi];
+    hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+    msg += filename + ":";
+    for (int di = 0; di < num_datasets; ++di) {
+      std::vector<hsize_t> shape =
+          hdf5_get_dataset_shape( file_id, this->layer_param_.top(di).c_str());
+      dataset_shapes_[fi * num_datasets + di] = shape;
+      if( di > 0) {
+        if( shape.size() != dataset_shapes_[di].size()) {
+          LOG(FATAL) << filename << " dataset "
+                     << this->layer_param_.top(di).c_str() << toString( shape)
+                     << " has different number of axes.";
+        }
+        if( shape[0] % batch_size != 0) {
+          hdf_blobs_divisible_by_batch_size_ = false;
+        }
+        for (int j = 1; j < shape.size(); ++j) {
+          if( shape[j] != dataset_shapes_[di][j]) {
+            files_have_consistent_shapes_ = false;
+          }
+        }
+      }
+      msg += std::string("  ") + this->layer_param_.top(di).c_str() + " " +
+          toString( shape);
+    }
+    LOG(INFO) << msg;
+    herr_t status = H5Fclose(file_id);
+    CHECK_GE(status, 0) << "Failed to close HDF5 file: " << filename;
+  }
+  LOG(INFO) << "files_have_consistent_shapes: "
+            << files_have_consistent_shapes_;
+  LOG(INFO) << "hdf_blobs_divisible_by_batch_size: "
+            << hdf_blobs_divisible_by_batch_size_;
+
+  if( files_have_consistent_shapes_ == false
+      && hdf_blobs_divisible_by_batch_size_ == false) {
+    LOG(FATAL) <<
+        "Cannot work with these files! The dataset must have either\n"
+        "the same spatial shapes, or the batch sizes in the HDF5 data\n"
+        "sets must be divisible by the requested training batch size!";
+  }
+
   file_permutation_.clear();
   file_permutation_.resize(num_files_);
   // Default to identity permutation.
@@ -108,20 +160,30 @@ void HDF5DataLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     std::random_shuffle(file_permutation_.begin(), file_permutation_.end());
   }
 
-  // Load the first HDF5 file and initialize the line counter.
-  LoadHDF5FileData(hdf_filenames_[file_permutation_[current_file_]].c_str());
+  // initialize the line counter.
   current_row_ = 0;
+}
+
+template <typename Dtype>
+void HDF5DataLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
+                                   const vector<Blob<Dtype>*>& top) {
+  const int batch_size = this->layer_param_.hdf5_data_param().batch_size();
+
+  // index of current file
+  int fi = file_permutation_[current_file_];
 
   // Reshape blobs.
-  const int batch_size = this->layer_param_.hdf5_data_param().batch_size();
   const int top_size = this->layer_param_.top_size();
   vector<int> top_shape;
   for (int i = 0; i < top_size; ++i) {
-    top_shape.resize(hdf_blobs_[i]->num_axes());
+    top_shape.resize( dataset_shapes_[fi * top_size + i].size());
     top_shape[0] = batch_size;
     for (int j = 1; j < top_shape.size(); ++j) {
-      top_shape[j] = hdf_blobs_[i]->shape(j);
+      top_shape[j] = dataset_shapes_[fi * top_size + i][j];
     }
+    VLOG(1) << "  " << this->layer_param_.name()
+            << " - Reshaping top[" << i << "] to "
+            << toString(top_shape) << std::endl;
     top[i]->Reshape(top_shape);
   }
 }
@@ -162,24 +224,52 @@ void HDF5DataLayer<Dtype>::Next() {
 template <typename Dtype>
 void HDF5DataLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
+  VLOG(1) << "  " << this->layer_param_.name() << " Forward CPU"
+          << std::endl;
   const int batch_size = this->layer_param_.hdf5_data_param().batch_size();
   for (int i = 0; i < batch_size; ++i) {
-    while (Skip()) {
-      Next();
+    // if at the begin of a new file, load the data
+    if( current_row_ == 0) {
+      LoadHDF5FileData(
+          hdf_filenames_[file_permutation_[current_file_]].c_str());
     }
+
+    // copy data to top blobs
     for (int j = 0; j < this->layer_param_.top_size(); ++j) {
       int data_dim = top[j]->count() / top[j]->shape(0);
       caffe_copy(data_dim,
           &hdf_blobs_[j]->cpu_data()[data_permutation_[current_row_]
             * data_dim], &top[j]->mutable_cpu_data()[i * data_dim]);
     }
-    Next();
+
+    // advance index to next "row", possibly go to next file
+    ++current_row_;
+    if (current_row_ == hdf_blobs_[0]->shape(0)) {
+      if (num_files_ > 1) {
+        ++current_file_;
+        if (current_file_ == num_files_) {
+          current_file_ = 0;
+          if (this->layer_param_.hdf5_data_param().shuffle()) {
+            std::random_shuffle(file_permutation_.begin(),
+                                file_permutation_.end());
+          DLOG(INFO) << "Looping around to first file.";
+          }
+        }
+      }
+      current_row_ = 0;
+      if (this->layer_param_.hdf5_data_param().shuffle())
+        std::random_shuffle(data_permutation_.begin(), data_permutation_.end());
+    }
   }
 }
 
-#ifdef CPU_ONLY
-STUB_GPU_FORWARD(HDF5DataLayer, Forward);
-#endif
+template <typename Dtype>
+void HDF5DataLayer<Dtype>::Backward_cpu(
+    const vector<Blob<Dtype>*>& top,
+    const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
+  VLOG(1) << "  " << this->layer_param_.name() << " Backward CPU"
+          << std::endl;
+}
 
 INSTANTIATE_CLASS(HDF5DataLayer);
 REGISTER_LAYER_CLASS(HDF5Data);

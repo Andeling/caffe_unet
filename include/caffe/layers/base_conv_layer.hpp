@@ -61,6 +61,8 @@ class BaseConvolutionLayer : public Layer<Dtype> {
   virtual bool reverse_dimensions() = 0;
   // Compute height_out_ and width_out_ from other parameters.
   virtual void compute_output_shape() = 0;
+  // returns true if the implementation requires the im2col buffer
+  virtual bool needs_col_buffer() = 0;
 
   /// @brief The spatial dimensions of a filter kernel.
   Blob<int> kernel_shape_;

@@ -53,7 +53,7 @@ Found a post/issue with your exact problem, but with no answer?
 Don't just leave a "me too" message - provide the details of your case.
 Problems with more available information are easier to solve and attract good attention.
 
-When posting to the list, make sure you provide as much relevant information as possible - recommendations for an issue report (see above) are a good starting point.  
+When posting to the list, make sure you provide as much relevant information as possible - recommendations for an issue report (see above) are a good starting point.
 *Please make it very clear which version of Caffe you are using, especially if it is a fork not maintained by BVLC.*
 
 Formatting recommendations hold: paste short logs/code fragments into the post (use fixed-width text for them), **attach** long logs or multiple files.

@@ -10,7 +10,8 @@
 #include "caffe/common.hpp"
 #include "caffe/layers/hdf5_data_layer.hpp"
 #include "caffe/proto/caffe.pb.h"
-
+#include "caffe/util/vector_helper.hpp"
+#include "caffe/util/hdf5.hpp"
 #include "caffe/test/test_caffe_main.hpp"
 
 namespace caffe {
@@ -133,35 +134,18 @@ TYPED_TEST(HDF5DataLayerTest, TestRead) {
   }
 }
 
-TYPED_TEST(HDF5DataLayerTest, TestSkip) {
-  typedef typename TypeParam::Dtype Dtype;
-  LayerParameter param;
-  param.add_top("data");
-  param.add_top("label");
+TYPED_TEST(HDF5DataLayerTest, Test_hdf5_get_dataset_shape) {
+  std::string filename = std::string(ABS_TEST_DATA_DIR "/sample_data.h5");
+  hid_t file_id = H5Fopen(filename.c_str(), H5F_ACC_RDONLY, H5P_DEFAULT);
+  EXPECT_NE( file_id, 0) << "file not found " << filename;
+  std::vector<hsize_t> shape;
+  shape = hdf5_get_dataset_shape(file_id, "data");
+  EXPECT_EQ( "(10,8,6,5)" , toString(shape));
+  shape = hdf5_get_dataset_shape(file_id, "label");
+  EXPECT_EQ( "(10,1)" , toString(shape));
+  herr_t status = H5Fclose(file_id);
+  CHECK_GE(status, 0) << "Failed to close HDF5 file: " << filename;
 
-  HDF5DataParameter* hdf5_data_param = param.mutable_hdf5_data_param();
-  int batch_size = 5;
-  hdf5_data_param->set_batch_size(batch_size);
-  hdf5_data_param->set_source(*(this->filename));
-
-  Caffe::set_solver_count(8);
-  for (int dev = 0; dev < Caffe::solver_count(); ++dev) {
-    Caffe::set_solver_rank(dev);
-
-    HDF5DataLayer<Dtype> layer(param);
-    layer.SetUp(this->blob_bottom_vec_, this->blob_top_vec_);
-    int label = dev;
-    for (int iter = 0; iter < 1; ++iter) {
-      layer.Forward(this->blob_bottom_vec_, this->blob_top_vec_);
-      for (int i = 0; i < batch_size; ++i) {
-        EXPECT_EQ(1 + label, this->blob_top_label_->cpu_data()[i]);
-        label = (label + Caffe::solver_count()) % (batch_size * 2);
-      }
-    }
-  }
-  Caffe::set_solver_count(1);
-  Caffe::set_solver_rank(0);
 }
-
 }  // namespace caffe
 #endif  // USE_HDF5

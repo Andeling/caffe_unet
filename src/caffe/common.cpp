@@ -217,7 +217,7 @@ bool Caffe::CheckDevice(const int device_id) {
   // the permission. cudaFree(0) is one of those with no side effect,
   // except the context initialization.
   bool r = ((cudaSuccess == cudaSetDevice(device_id)) &&
-            (cudaSuccess == cudaFree(0)));
+            (cudaSuccess == Caffe::freeGPU(0)));
   // reset any error that may have occurred.
   cudaGetLastError();
   return r;
@@ -234,6 +234,45 @@ int Caffe::FindDevice(const int start_id) {
     if (CheckDevice(i)) return i;
   }
   return -1;
+}
+
+std::map<void*,size_t> Caffe::gpuMemoryMap_ = std::map<void*,size_t>();
+cudaError_t Caffe::mallocGPU(void **ptr, size_t mem) {
+  if (VLOG_IS_ON(1)) {
+    size_t free, total;
+    cudaMemGetInfo(&free, &total);
+    VLOG(1) << "Allocating " << mem / 4 << " floats ("
+            << mem / 1024.0 / 1024.0
+            << " MB). Total memory allocated: "
+            << getTotalAllocatedGPUMemory() / 1024.0 / 1024.0
+            << " MB (Memory free: "
+            << free / 1024.0 / 1024.0 << " MB)" << std::endl;
+    cudaGetLastError();
+  }
+  cudaError_t res = cudaMalloc(ptr, mem);
+  if (VLOG_IS_ON(1) && *ptr != NULL) gpuMemoryMap_[*ptr] = mem;
+  return res;
+}
+cudaError_t Caffe::freeGPU(void *ptr) {
+  if (VLOG_IS_ON(1)) {
+    size_t free, total;
+    cudaMemGetInfo(&free, &total);
+    VLOG(1) << "Freeing " << gpuMemoryMap_[ptr] / 4 << " floats ("
+            << gpuMemoryMap_[ptr] / 1024.0 / 1024.0
+            << " MB). Total memory allocated: "
+            << getTotalAllocatedGPUMemory() / 1024.0 / 1024.0
+            << " MB (Memory free: "
+            << free / 1024.0 / 1024.0 << " MB)" << std::endl;
+    cudaGetLastError();
+    if (ptr != NULL) gpuMemoryMap_.erase(ptr);
+  }
+  return cudaFree(ptr);
+}
+size_t Caffe::getTotalAllocatedGPUMemory() {
+  size_t totalMemoryAllocated = 0;
+  for (std::map<void*,size_t>::const_iterator it = gpuMemoryMap_.begin();
+       it != gpuMemoryMap_.end(); ++it) totalMemoryAllocated += it->second;
+  return totalMemoryAllocated;
 }
 
 class Caffe::RNG::Generator {

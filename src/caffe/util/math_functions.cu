@@ -1,4 +1,4 @@
-#include <math_functions.h>  // CUDA's, not caffe's, for fabs, signbit
+#include <cuda_runtime.h>  // CUDA's, not caffe's, for fabs, signbit
 #include <thrust/device_vector.h>
 #include <thrust/functional.h>  // thrust::plus
 #include <thrust/reduce.h>
@@ -179,6 +179,7 @@ void caffe_gpu_set(const int N, const Dtype alpha, Dtype* Y) {
 }
 
 template void caffe_gpu_set<int>(const int N, const int alpha, int* Y);
+template void caffe_gpu_set<unsigned int>(const int N, const unsigned int alpha, unsigned int* Y);
 template void caffe_gpu_set<float>(const int N, const float alpha, float* Y);
 template void caffe_gpu_set<double>(const int N, const double alpha, double* Y);
 

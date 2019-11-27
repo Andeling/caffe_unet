@@ -3,6 +3,8 @@
 
 #include <string>
 #include <vector>
+#include <sstream>
+#include <stdexcept>
 
 namespace caffe {
 
@@ -105,6 +107,16 @@ void hdf5_load_nd_dataset<double>(hid_t file_id, const char* dataset_name_,
 }
 
 template <>
+void hdf5_load_nd_dataset<int>(hid_t file_id, const char* dataset_name_,
+        int min_dim, int max_dim, Blob<int>* blob, bool reshape) {
+  hdf5_load_nd_dataset_helper(file_id, dataset_name_, min_dim, max_dim, blob,
+                              reshape);
+  herr_t status = H5LTread_dataset_int(
+    file_id, dataset_name_, blob->mutable_cpu_data());
+  CHECK_GE(status, 0) << "Failed to read int dataset " << dataset_name_;
+}
+
+template <>
 void hdf5_save_nd_dataset<float>(
     const hid_t file_id, const string& dataset_name, const Blob<float>& blob,
     bool write_diff) {
@@ -146,19 +158,67 @@ void hdf5_save_nd_dataset<double>(
   delete[] dims;
 }
 
-string hdf5_load_string(hid_t loc_id, const string& dataset_name) {
+template <>
+void hdf5_save_nd_dataset<int>(
+    hid_t file_id, const string& dataset_name, const Blob<int>& blob,
+    bool write_diff) {
+  int num_axes = blob.num_axes();
+  hsize_t *dims = new hsize_t[num_axes];
+  for (int i = 0; i < num_axes; ++i) {
+    dims[i] = blob.shape(i);
+  }
+  const int* data;
+  if (write_diff) {
+    data = blob.cpu_diff();
+  } else {
+    data = blob.cpu_data();
+  }
+  herr_t status = H5LTmake_dataset_int(
+      file_id, dataset_name.c_str(), num_axes, dims, data);
+  CHECK_GE(status, 0) << "Failed to make double dataset " << dataset_name;
+  delete[] dims;
+}
+
+string hdf5_load_string(
+    hid_t loc_id, const string& dataset_name, bool throwException) {
+
+  H5E_auto2_t old_func;
+  void *old_client_data;
+  H5Eget_auto(H5E_DEFAULT, &old_func, &old_client_data);
+
+  // Temporarily disable HDF5 error stack printing
+  if (throwException) H5Eset_auto(H5E_DEFAULT, NULL, NULL);
+
   // Get size of dataset
   size_t size;
   H5T_class_t class_;
-  herr_t status = \
-    H5LTget_dataset_info(loc_id, dataset_name.c_str(), NULL, &class_, &size);
-  CHECK_GE(status, 0) << "Failed to get dataset info for " << dataset_name;
-  char *buf = new char[size];
+  herr_t status =
+      H5LTget_dataset_info(loc_id, dataset_name.c_str(), NULL, &class_, &size);
+  if (throwException && status < 0) {
+    // Re-enable HDF5 error stack printing
+    H5Eset_auto(H5E_DEFAULT, old_func, old_client_data);
+    std::stringstream msg;
+    msg << "Failed to get dataset info for " << dataset_name;
+    throw std::runtime_error(msg.str().c_str());
+  }
+  else CHECK_GE(status, 0) << "Failed to get dataset info for " << dataset_name;
+  char *buf = new char[size + 1];
   status = H5LTread_dataset_string(loc_id, dataset_name.c_str(), buf);
-  CHECK_GE(status, 0)
-    << "Failed to load int dataset with name " << dataset_name;
+  buf[size] = 0;
+  if (throwException && status < 0) {
+    // Re-enable HDF5 error stack printing
+    H5Eset_auto(H5E_DEFAULT, old_func, old_client_data);
+    std::stringstream msg;
+    msg << "Failed to load string dataset with name " << dataset_name;
+    throw std::runtime_error(msg.str().c_str());
+  }
+  else CHECK_GE(status, 0) << "Failed to load string dataset with name "
+                           << dataset_name;
   string val(buf);
   delete[] buf;
+
+  // Re-enable HDF5 error stack printing
+  if (throwException) H5Eset_auto(H5E_DEFAULT, old_func, old_client_data);
   return val;
 }
 
@@ -180,10 +240,32 @@ int hdf5_load_int(hid_t loc_id, const string& dataset_name) {
 
 void hdf5_save_int(hid_t loc_id, const string& dataset_name, int i) {
   hsize_t one = 1;
-  herr_t status = \
+  herr_t status =
     H5LTmake_dataset_int(loc_id, dataset_name.c_str(), 1, &one, &i);
   CHECK_GE(status, 0)
     << "Failed to save int dataset with name " << dataset_name;
+}
+
+std::vector<int> hdf5_load_int_vec(hid_t loc_id, const string &dataset_name) {
+  std::vector<hsize_t> dsShape(
+      hdf5_get_dataset_shape(loc_id, dataset_name.c_str()));
+  CHECK_EQ(dsShape.size(), 1)
+      << "Could not load " << dataset_name << " into 1-D vector";
+  std::vector<int> res(dsShape[0]);
+  herr_t status =
+      H5LTread_dataset_int(loc_id, dataset_name.c_str(), res.data());
+  CHECK_GE(status, 0)
+    << "Failed to load vectorial int dataset with name " << dataset_name;
+  return res;
+}
+
+void hdf5_save_int_vec(
+    hid_t loc_id, const string &dataset_name, std::vector<int> vec) {
+  hsize_t size = vec.size();
+  herr_t status = H5LTmake_dataset_int(
+      loc_id, dataset_name.c_str(), 1, &size, vec.data());
+  CHECK_GE(status, 0)
+      << "Failed to save vectorial int dataset with name " << dataset_name;
 }
 
 int hdf5_get_num_links(hid_t loc_id) {
@@ -206,6 +288,20 @@ string hdf5_get_name_by_idx(hid_t loc_id, int idx) {
   delete[] c_str;
   return result;
 }
+
+std::vector<hsize_t> hdf5_get_dataset_shape(
+    hid_t file_id, const char* dataset_name) {
+  // get number of dimensions
+  herr_t status;
+  int ndims;
+  status = H5LTget_dataset_ndims(file_id, dataset_name, &ndims);
+  std::vector<hsize_t> dims(ndims);
+  status = H5LTget_dataset_info(
+      file_id, dataset_name, dims.data(), NULL, NULL);
+  CHECK_GE(status, 0) << "Failed to get dataset info for " << dataset_name;
+  return dims;
+}
+
 
 }  // namespace caffe
 #endif  // USE_HDF5

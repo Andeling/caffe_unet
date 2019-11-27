@@ -85,6 +85,8 @@ __global__ void kernel_channel_dot(const int num, const int channels,
 template <typename Dtype>
 void SoftmaxLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
+  VLOG(1) << "  " << this->type() << " " << this->layer_param_.name()
+          << " Forward GPU" << std::endl;
   const Dtype* bottom_data = bottom[0]->gpu_data();
   Dtype* top_data = top[0]->mutable_gpu_data();
   Dtype* scale_data = scale_.mutable_gpu_data();
@@ -122,6 +124,8 @@ void SoftmaxLayer<Dtype>::Forward_gpu(const vector<Blob<Dtype>*>& bottom,
 template <typename Dtype>
 void SoftmaxLayer<Dtype>::Backward_gpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down, const vector<Blob<Dtype>*>& bottom) {
+  VLOG(1) << "  " << this->type() << " " << this->layer_param_.name()
+          << " Backward GPU" << std::endl;
   const Dtype* top_diff = top[0]->gpu_diff();
   const Dtype* top_data = top[0]->gpu_data();
   Dtype* bottom_diff = bottom[0]->mutable_gpu_diff();

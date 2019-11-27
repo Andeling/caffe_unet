@@ -31,7 +31,7 @@ SyncedMemory::~SyncedMemory() {
 
 #ifndef CPU_ONLY
   if (gpu_ptr_ && own_gpu_data_) {
-    CUDA_CHECK(cudaFree(gpu_ptr_));
+    CUDA_CHECK(Caffe::freeGPU(gpu_ptr_));
   }
 #endif  // CPU_ONLY
 }
@@ -68,14 +68,14 @@ inline void SyncedMemory::to_gpu() {
 #ifndef CPU_ONLY
   switch (head_) {
   case UNINITIALIZED:
-    CUDA_CHECK(cudaMalloc(&gpu_ptr_, size_));
+    CUDA_CHECK(Caffe::mallocGPU(&gpu_ptr_, size_));
     caffe_gpu_memset(size_, 0, gpu_ptr_);
     head_ = HEAD_AT_GPU;
     own_gpu_data_ = true;
     break;
   case HEAD_AT_CPU:
     if (gpu_ptr_ == NULL) {
-      CUDA_CHECK(cudaMalloc(&gpu_ptr_, size_));
+      CUDA_CHECK(Caffe::mallocGPU(&gpu_ptr_, size_));
       own_gpu_data_ = true;
     }
     caffe_gpu_memcpy(size_, cpu_ptr_, gpu_ptr_);
@@ -123,7 +123,7 @@ void SyncedMemory::set_gpu_data(void* data) {
 #ifndef CPU_ONLY
   CHECK(data);
   if (own_gpu_data_) {
-    CUDA_CHECK(cudaFree(gpu_ptr_));
+    CUDA_CHECK(Caffe::freeGPU(gpu_ptr_));
   }
   gpu_ptr_ = data;
   head_ = HEAD_AT_GPU;
@@ -157,7 +157,7 @@ void SyncedMemory::async_gpu_push(const cudaStream_t& stream) {
   check_device();
   CHECK(head_ == HEAD_AT_CPU);
   if (gpu_ptr_ == NULL) {
-    CUDA_CHECK(cudaMalloc(&gpu_ptr_, size_));
+    CUDA_CHECK(Caffe::mallocGPU(&gpu_ptr_, size_));
     own_gpu_data_ = true;
   }
   const cudaMemcpyKind put = cudaMemcpyHostToDevice;
@@ -183,4 +183,3 @@ void SyncedMemory::check_device() {
 }
 
 }  // namespace caffe
-

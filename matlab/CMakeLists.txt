@@ -38,6 +38,22 @@ caffe_get_current_cflags(cflags)
 caffe_parse_linker_libs(Caffe_LINKER_LIBS folders libflags macos_frameworks)
 set(folders $<TARGET_LINKER_FILE_DIR:caffe> ${folders})
 
+set(caffe_cflags "")
+foreach(defi ${Caffe_DEFINITIONS})
+  if(defi MATCHES "^(PRIVATE)|(PUBLIC)")
+  else()
+    list(APPEND caffe_cflags ${defi})
+  endif()
+endforeach()
+foreach(path ${Caffe_INCLUDE_DIRS})
+  if(path MATCHES "^(PRIVATE)|(PUBLIC)")
+  else()
+    list(APPEND caffe_cflags -I${path})
+  endif()
+endforeach()
+list(APPEND caffe_cflags -I$<BUILD_INTERFACE:${Caffe_INCLUDE_DIR}>)
+caffe_list_unique(caffe_cflags)
+
 # prepare linker flag lists
 string(REPLACE ";" ";-L" link_folders "-L${folders}")
 string(REPLACE ";" ":"  rpath_folders   "${folders}")
@@ -47,7 +63,7 @@ if(build_using MATCHES "Matlab")
 
   caffe_fetch_and_set_proper_mexext(Matlab_caffe_mex)
   add_custom_command(OUTPUT ${Matlab_caffe_mex} COMMAND ${Matlab_mex}
-      ARGS -output ${Matlab_caffe_mex} ${Matlab_srcs} ${cflags} ${link_folders} ${libflags}
+      ARGS -output ${Matlab_caffe_mex} ${Matlab_srcs} ${cflags} ${caffe_cflags} ${link_folders} ${libflags}
       DEPENDS caffe COMMENT "Building Matlab interface: ${Matlab_caffe_mex}" VERBATIM)
   add_custom_target(matlab ALL DEPENDS ${Matlab_caffe_mex} SOURCES ${Matlab_srcs})
 
@@ -69,4 +85,3 @@ endif()
 # ---[ Install
 file(GLOB mfiles caffe/*.m)
 install(FILES ${mfiles} ${Matlab_caffe_mex} DESTINATION matlab)
-

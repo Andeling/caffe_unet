@@ -3,6 +3,7 @@
 
 #include "caffe/layers/softmax_layer.hpp"
 #include "caffe/util/math_functions.hpp"
+#include "caffe/util/vector_helper.hpp"
 
 namespace caffe {
 
@@ -11,8 +12,14 @@ void SoftmaxLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {
   softmax_axis_ =
       bottom[0]->CanonicalAxisIndex(this->layer_param_.softmax_param().axis());
+  VLOG(1) << "  " << this->type() << " " << this->layer_param_.name()
+          << " - Reshaping top[0] to "
+          << toString(bottom[0]->shape()) << std::endl;
   top[0]->ReshapeLike(*bottom[0]);
   vector<int> mult_dims(1, bottom[0]->shape(softmax_axis_));
+  VLOG(1) << "  " << this->type() << " " << this->layer_param_.name()
+          << " - Reshaping sum_multiplier_ to "
+          << toString(mult_dims) << std::endl;
   sum_multiplier_.Reshape(mult_dims);
   Dtype* multiplier_data = sum_multiplier_.mutable_cpu_data();
   caffe_set(sum_multiplier_.count(), Dtype(1), multiplier_data);
@@ -20,12 +27,17 @@ void SoftmaxLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   inner_num_ = bottom[0]->count(softmax_axis_ + 1);
   vector<int> scale_dims = bottom[0]->shape();
   scale_dims[softmax_axis_] = 1;
+  VLOG(1) << "  " << this->type() << " " << this->layer_param_.name()
+            << " - Reshaping scale_ to "
+            << toString(scale_dims) << std::endl;
   scale_.Reshape(scale_dims);
 }
 
 template <typename Dtype>
 void SoftmaxLayer<Dtype>::Forward_cpu(const vector<Blob<Dtype>*>& bottom,
     const vector<Blob<Dtype>*>& top) {
+  VLOG(1) << "  " << this->type() << " " << this->layer_param_.name()
+          << " Forward CPU" << std::endl;
   const Dtype* bottom_data = bottom[0]->cpu_data();
   Dtype* top_data = top[0]->mutable_cpu_data();
   Dtype* scale_data = scale_.mutable_cpu_data();
@@ -63,6 +75,8 @@ template <typename Dtype>
 void SoftmaxLayer<Dtype>::Backward_cpu(const vector<Blob<Dtype>*>& top,
     const vector<bool>& propagate_down,
     const vector<Blob<Dtype>*>& bottom) {
+  VLOG(1) << "  " << this->type() << " " << this->layer_param_.name()
+          << " Backward CPU" << std::endl;
   const Dtype* top_diff = top[0]->cpu_diff();
   const Dtype* top_data = top[0]->cpu_data();
   Dtype* bottom_diff = bottom[0]->mutable_cpu_diff();

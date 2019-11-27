@@ -5,6 +5,7 @@
 #include "caffe/layers/base_conv_layer.hpp"
 #include "caffe/util/im2col.hpp"
 #include "caffe/util/math_functions.hpp"
+#include "caffe/util/vector_helper.hpp"
 
 namespace caffe {
 
@@ -21,6 +22,9 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
   CHECK_GE(num_spatial_axes_, 0);
   vector<int> spatial_dim_blob_shape(1, std::max(num_spatial_axes_, 1));
   // Setup filter kernel dimensions (kernel_shape_).
+  VLOG(1) << "  " << this->layer_param_.name()
+            << " - Reshaping kernel_shape_ to "
+            << toString(spatial_dim_blob_shape) << std::endl;
   kernel_shape_.Reshape(spatial_dim_blob_shape);
   int* kernel_shape_data = kernel_shape_.mutable_cpu_data();
   if (conv_param.has_kernel_h() || conv_param.has_kernel_w()) {
@@ -45,6 +49,9 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     CHECK_GT(kernel_shape_data[i], 0) << "Filter dimensions must be nonzero.";
   }
   // Setup stride dimensions (stride_).
+  VLOG(1) << "  " << this->layer_param_.name()
+          << " - Reshaping stride_ to "
+          << toString(spatial_dim_blob_shape) << std::endl;
   stride_.Reshape(spatial_dim_blob_shape);
   int* stride_data = stride_.mutable_cpu_data();
   if (conv_param.has_stride_h() || conv_param.has_stride_w()) {
@@ -69,6 +76,9 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     }
   }
   // Setup pad dimensions (pad_).
+  VLOG(1) << "  " << this->layer_param_.name()
+          << " - Reshaping pad_ to "
+          << toString(spatial_dim_blob_shape) << std::endl;
   pad_.Reshape(spatial_dim_blob_shape);
   int* pad_data = pad_.mutable_cpu_data();
   if (conv_param.has_pad_h() || conv_param.has_pad_w()) {
@@ -92,6 +102,9 @@ void BaseConvolutionLayer<Dtype>::LayerSetUp(const vector<Blob<Dtype>*>& bottom,
     }
   }
   // Setup dilation dimensions (dilation_).
+  VLOG(1) << "  " << this->layer_param_.name()
+          << " - Reshaping dilation_ to "
+          << toString(spatial_dim_blob_shape) << std::endl;
   dilation_.Reshape(spatial_dim_blob_shape);
   int* dilation_data = dilation_.mutable_cpu_data();
   const int num_dilation_dims = conv_param.dilation_size();
@@ -207,6 +220,9 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
     top_shape.push_back(output_shape_[i]);
   }
   for (int top_id = 0; top_id < top.size(); ++top_id) {
+    VLOG(1) << "  " << this->layer_param_.name()
+              << " - Reshaping top[" << top_id << "] to "
+              << toString(top_shape) << std::endl;
     top[top_id]->Reshape(top_shape);
   }
   if (reverse_dimensions()) {
@@ -218,6 +234,9 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   output_offset_ = conv_out_channels_ * conv_out_spatial_dim_ / group_;
   // Setup input dimensions (conv_input_shape_).
   vector<int> bottom_dim_blob_shape(1, num_spatial_axes_ + 1);
+  VLOG(1) << "  " << this->layer_param_.name()
+            << " - Reshaping conv_input_shape_ to "
+            << toString(bottom_dim_blob_shape) << std::endl;
   conv_input_shape_.Reshape(bottom_dim_blob_shape);
   int* conv_input_shape_data = conv_input_shape_.mutable_cpu_data();
   for (int i = 0; i < num_spatial_axes_ + 1; ++i) {
@@ -227,19 +246,29 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
       conv_input_shape_data[i] = bottom[0]->shape(channel_axis_ + i);
     }
   }
-  // The im2col result buffer will only hold one image at a time to avoid
-  // overly large memory usage. In the special case of 1x1 convolution
-  // it goes lazily unused to save memory.
-  col_buffer_shape_.clear();
-  col_buffer_shape_.push_back(kernel_dim_ * group_);
-  for (int i = 0; i < num_spatial_axes_; ++i) {
-    if (reverse_dimensions()) {
-      col_buffer_shape_.push_back(input_shape(i + 1));
-    } else {
-      col_buffer_shape_.push_back(output_shape_[i]);
+
+  // The im2col buffer is not needed when using cuDNN, therefore creation
+  // can be skipped. This does not save memory but allows convolutions which
+  // would require buffers exceeding INT_MAX entries.
+  if (needs_col_buffer()) {
+    // The im2col result buffer will only hold one image at a time to avoid
+    // overly large memory usage. In the special case of 1x1 convolution
+    // it goes lazily unused to save memory.
+    col_buffer_shape_.clear();
+    col_buffer_shape_.push_back(kernel_dim_ * group_);
+    for (int i = 0; i < num_spatial_axes_; ++i) {
+      if (reverse_dimensions()) {
+        col_buffer_shape_.push_back(input_shape(i + 1));
+      } else {
+        col_buffer_shape_.push_back(output_shape_[i]);
+      }
     }
+    VLOG(1) << "  " << this->layer_param_.name()
+            << " - Reshaping col_buffer_ to "
+            << toString(col_buffer_shape_) << std::endl;
+    col_buffer_.Reshape(col_buffer_shape_);
   }
-  col_buffer_.Reshape(col_buffer_shape_);
+
   bottom_dim_ = bottom[0]->count(channel_axis_);
   top_dim_ = top[0]->count(channel_axis_);
   num_kernels_im2col_ = conv_in_channels_ * conv_out_spatial_dim_;
@@ -248,6 +277,9 @@ void BaseConvolutionLayer<Dtype>::Reshape(const vector<Blob<Dtype>*>& bottom,
   out_spatial_dim_ = top[0]->count(first_spatial_axis);
   if (bias_term_) {
     vector<int> bias_multiplier_shape(1, out_spatial_dim_);
+    VLOG(1) << "  " << this->layer_param_.name()
+            << " - Reshaping bias_multiplier_ to "
+            << toString(bias_multiplier_shape) << std::endl;
     bias_multiplier_.Reshape(bias_multiplier_shape);
     caffe_set(bias_multiplier_.count(), Dtype(1),
         bias_multiplier_.mutable_cpu_data());

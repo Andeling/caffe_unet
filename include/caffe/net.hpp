@@ -23,9 +23,10 @@ namespace caffe {
 template <typename Dtype>
 class Net {
  public:
-  explicit Net(const NetParameter& param);
+  explicit Net(const NetParameter& param, const Net* root_net = NULL);
   explicit Net(const string& param_file, Phase phase,
-      const int level = 0, const vector<string>* stages = NULL);
+      const int level = 0, const vector<string>* stages = NULL,
+      const Net* root_net = NULL);
   virtual ~Net() {}
 
   /// @brief Initialize a network with a NetParameter.
@@ -330,6 +331,8 @@ class Net {
   size_t memory_used_;
   /// Whether to compute and display debug info for the net.
   bool debug_info_;
+  /// The root net that actually holds the shared layers in data parallelism
+  const Net* const root_net_;
   // Callbacks
   vector<Callback*> before_forward_;
   vector<Callback*> after_forward_;

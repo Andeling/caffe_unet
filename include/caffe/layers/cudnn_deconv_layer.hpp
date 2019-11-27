@@ -38,6 +38,7 @@ class CuDNNDeconvolutionLayer : public DeconvolutionLayer<Dtype> {
   virtual void Backward_gpu(const vector<Blob<Dtype>*>& top,
                             const vector<bool>& propagate_down,
                             const vector<Blob<Dtype>*>& bottom);
+  virtual inline bool needs_col_buffer() { return Caffe::mode() == Caffe::CPU; }
 
   bool handles_setup_;
   cudnnHandle_t* handle_;

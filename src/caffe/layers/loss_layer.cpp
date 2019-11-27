@@ -19,6 +19,8 @@ void LossLayer<Dtype>::Reshape(
   CHECK_EQ(bottom[0]->shape(0), bottom[1]->shape(0))
       << "The data and label should have the same first dimension.";
   vector<int> loss_shape(0);  // Loss layers output a scalar; 0 axes.
+  VLOG(1) << "  " << this->layer_param_.name()
+          << " - Reshaping top[0] to scalar" << std::endl;
   top[0]->Reshape(loss_shape);
 }
 

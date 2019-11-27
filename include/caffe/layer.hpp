@@ -19,6 +19,10 @@ namespace boost { class mutex; }
 
 namespace caffe {
 
+// forward declaration of Net (apply_deformation_layer needs a back
+// reference pointer to it)
+template<typename Dtype> class Net;
+
 /**
  * @brief An interface for the units of computation which can be composed into a
  *        Net.
@@ -38,7 +42,7 @@ class Layer {
    * layer.
    */
   explicit Layer(const LayerParameter& param)
-    : layer_param_(param) {
+    : layer_param_(param), parent_net_(0), is_shared_(false) {
       // Set phase and copy blobs (if there are any).
       phase_ = param.phase();
       if (layer_param_.blobs_size() > 0) {
@@ -90,6 +94,30 @@ class Layer {
    */
   virtual void LayerSetUp(const vector<Blob<Dtype>*>& bottom,
       const vector<Blob<Dtype>*>& top) {}
+
+  /**
+   * @brief Whether a layer should be shared by multiple nets during data
+   *        parallelism. By default, all layers except for data layers should
+   *        not be shared. data layers should be shared to ensure each worker
+   *        solver access data sequentially during data parallelism.
+   */
+  virtual inline bool ShareInParallel() const { return false; }
+
+  /** @brief Return whether this layer is actually shared by other nets.
+   *         If ShareInParallel() is true and using more than one GPU and the
+   *         net has TRAIN phase, then this function is expected return true.
+   */
+  inline bool IsShared() const { return is_shared_; }
+
+  /** @brief Set whether this layer is actually shared by other nets
+   *         If ShareInParallel() is true and using more than one GPU and the
+   *         net has TRAIN phase, then is_shared should be set true.
+   */
+  inline void SetShared(bool is_shared) {
+    CHECK(ShareInParallel() || !is_shared)
+        << type() << "Layer does not support sharing.";
+    is_shared_ = is_shared;
+  }
 
   /**
    * @brief Adjust the shapes of top blobs and internal buffers to accommodate
@@ -291,6 +319,22 @@ class Layer {
     param_propagate_down_[param_id] = value;
   }
 
+ /**
+   * @brief get the pointer to the parent network that holds this layer
+   * (needed by apply_deformation_layer)
+   */
+  inline const Net<Dtype>* parent_net() const {
+    CHECK_NOTNULL( parent_net_);
+    return parent_net_;
+  }
+
+  /**
+   * @brief set the pointer to the parent network that holds this layer
+   * (needed by apply_deformation_layer)
+   */
+  inline void set_parent_net( const Net<Dtype>* net) {
+    parent_net_ = net;
+  }
 
  protected:
   /** The protobuf that stores the layer parameters */
@@ -305,6 +349,10 @@ class Layer {
   /** The vector that indicates whether each top blob has a non-zero weight in
    *  the objective function. */
   vector<Dtype> loss_;
+
+  /** Backreference to the parent network that holds this layer
+   * (needed by apply_deformation_layer) */
+  const Net<Dtype>* parent_net_;
 
   /** @brief Using the CPU device, compute the layer output. */
   virtual void Forward_cpu(const vector<Blob<Dtype>*>& bottom,
@@ -403,6 +451,19 @@ class Layer {
   }
 
  private:
+  /** Whether this layer is actually shared by other nets*/
+  bool is_shared_;
+
+  /** The mutex for sequential forward if this layer is shared */
+  shared_ptr<boost::mutex> forward_mutex_;
+
+  /** Initialize forward_mutex_ */
+  void InitMutex();
+  /** Lock forward_mutex_ if this layer is shared */
+  void Lock();
+  /** Unlock forward_mutex_ if this layer is shared */
+  void Unlock();
+
   DISABLE_COPY_AND_ASSIGN(Layer);
 };  // class Layer
 
