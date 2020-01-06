@@ -4,7 +4,7 @@
 #include <time.h>
 
 #include "tiffio.h"
-#include "api/caffe_unet.h"
+#include "caffe_unet.h"
 
 uint16_t *tiff_imread_u16(char *filename, uint32_t *width, uint32_t *height) {
     TIFF *tif = TIFFOpen(filename, "r");
