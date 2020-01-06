@@ -92,6 +92,7 @@ endif()
 # ---[ Subdirectories
 add_subdirectory(src/gtest)
 add_subdirectory(src/caffe)
+add_subdirectory(api)
 add_subdirectory(tools)
 add_subdirectory(examples)
 add_subdirectory(python)
