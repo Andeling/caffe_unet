@@ -315,7 +315,7 @@ UNet_Err UNet_TiledPredict(UNetModel model, int32_t* image_shape, float* image, 
     return UNet_OK;
 }
 
-UNet_Err UNet_ModelID(UNetModel model, char *ident, uint32_t size) {
+UNet_Err UNet_GetID(UNetModel model, char *ident, uint32_t size) {
     class _UNetModel *m = (class _UNetModel *)model;
     uint32_t size_copy = m->ident.length() + 1;
     if (size_copy > size) {
@@ -325,7 +325,7 @@ UNet_Err UNet_ModelID(UNetModel model, char *ident, uint32_t size) {
     return UNet_OK;
 }
 
-UNet_Err UNet_ModelName(UNetModel model, char *name, uint32_t size)  {
+UNet_Err UNet_GetName(UNetModel model, char *name, uint32_t size)  {
     class _UNetModel *m = (class _UNetModel *)model;
     uint32_t size_copy = m->ident.length() + 1;
     if (size_copy > size) {
@@ -335,7 +335,7 @@ UNet_Err UNet_ModelName(UNetModel model, char *name, uint32_t size)  {
     return UNet_OK;
 }
 
-UNet_Err UNet_ModelDescription(UNetModel model, char *description, uint32_t size)  {
+UNet_Err UNet_GetDescription(UNetModel model, char *description, uint32_t size)  {
     class _UNetModel *m = (class _UNetModel *)model;
     uint32_t size_copy = m->ident.length() + 1;
     if (size_copy > size) {
@@ -345,29 +345,29 @@ UNet_Err UNet_ModelDescription(UNetModel model, char *description, uint32_t size
     return UNet_OK;
 }
 
-int32_t UNet_NumDims(UNetModel model) {
+int32_t UNet_GetNumDims(UNetModel model) {
     class _UNetModel *m = (class _UNetModel *)model;
     return m->n_dims;
 }
 
-int32_t UNet_NumChannels(UNetModel model) {
+int32_t UNet_GetNumChannels(UNetModel model) {
     class _UNetModel *m = (class _UNetModel *)model;
     return m->n_channels;
 }
 
-int32_t UNet_NumClasses(UNetModel model) {
+int32_t UNet_GetNumClasses(UNetModel model) {
     class _UNetModel *m = (class _UNetModel *)model;
     return m->n_classes;
 }
 
-void UNet_PixelSize(UNetModel model, double *pixel_size_um) {
+void UNet_GetPixelSize(UNetModel model, double *pixel_size_um) {
     class _UNetModel *m = (class _UNetModel *)model;
     for (int i = 0; i < m->n_dims; i++) {
         pixel_size_um[i] = m->pixel_size_um[i];
     }
 }
 
-int32_t UNet_NormalizationType(UNetModel model) {
+int32_t UNet_GetNormalizationType(UNetModel model) {
     class _UNetModel *m = (class _UNetModel *)model;
     return m->normalization_type;
 }

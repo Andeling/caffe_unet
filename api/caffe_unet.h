@@ -26,14 +26,14 @@ UNet_Err UNet_SetTileShape(UNetModel model, int32_t* tile_shape);
 UNet_Err UNet_GetTileShape(UNetModel model, int32_t* tile_shape);
 UNet_Err UNet_TiledPredict(UNetModel model, int32_t* image_shape, float* image, float* score);
 
-UNet_Err UNet_ModelID(UNetModel model, char *ident, uint32_t size);
-UNet_Err UNet_ModelName(UNetModel model, char *name, uint32_t size);
-UNet_Err UNet_ModelDescription(UNetModel model, char *description, uint32_t size);
-int32_t UNet_NumDims(UNetModel model);
-int32_t UNet_NumChannels(UNetModel model);
-int32_t UNet_NumClasses(UNetModel model);
-void UNet_PixelSize(UNetModel model, double *pixel_size_um);
-int32_t UNet_NormalizationType(UNetModel model);
+UNet_Err UNet_GetID(UNetModel model, char *ident, uint32_t size);
+UNet_Err UNet_GetName(UNetModel model, char *name, uint32_t size);
+UNet_Err UNet_GetDescription(UNetModel model, char *description, uint32_t size);
+int32_t UNet_GetNumDims(UNetModel model);
+int32_t UNet_GetNumChannels(UNetModel model);
+int32_t UNet_GetNumClasses(UNetModel model);
+void UNet_GetPixelSize(UNetModel model, double *pixel_size_um);
+int32_t UNet_GetNormalizationType(UNetModel model);
 
 #ifdef __cplusplus
 }

@@ -87,24 +87,30 @@ int main() {
     ret = UNet_SetTileShape(model, (int32_t *)&tileShape);
 
     // Get model info
+    printf("Model info:\n");
     int len_buf = 4096;
     char buf[len_buf];
-    UNet_ModelID(model, buf, len_buf);
-    printf("Model ID: %s\n", buf);
-    UNet_ModelName(model, buf, len_buf);
-    printf("Model Name: %s\n", buf);
+    UNet_GetID(model, buf, len_buf);
+    printf("  ID: %s\n", buf);
+    UNet_GetName(model, buf, len_buf);
+    printf("  Name: %s\n", buf);
+    UNet_GetDescription(model, buf, len_buf);
+    printf("  Description: %s\n", buf);
 
-    int32_t n_dims = UNet_NumDims(model);
-    int32_t n_channels = UNet_NumChannels(model);
-    int32_t n_classes = UNet_NumClasses(model);
-    printf("Spatial Dimensions: %d\n", n_dims);
-    printf("Input Image Channels: %d\n", n_channels);
-    printf("Output Score Classes: %d\n", n_classes);
+    int32_t n_dims = UNet_GetNumDims(model);
+    int32_t n_channels = UNet_GetNumChannels(model);
+    int32_t n_classes = UNet_GetNumClasses(model);
+    printf("  # of Spatial Dimensions: %d\n", n_dims);
+    printf("  # of Input Image Channels: %d\n", n_channels);
+    printf("  # of Output Score Classes: %d\n", n_classes);
 
     // Read input image
     uint32_t width, height;
     uint16_t *im = tiff_imread_u16("/tmp/caffe_unet/sampledata/BF-Microspores/BF-C2DH-MiSp_01.tif", &width, &height);
-  
+    
+    printf("Input image size: (%d, %d)\n", height, width);
+    printf("Tile shape: (%d, %d)\n", tileShape[0], tileShape[1]);
+    
     // Normalize to [0, 1]
     float *imnorm = malloc(sizeof(float) * width * height);
     float im_max = im[0];
