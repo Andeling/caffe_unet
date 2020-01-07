@@ -17,13 +17,14 @@ typedef enum {
     UNet_ErrInvalidParameter = -6,
 } UNet_Err;
 
+void UNet_SetModeGPU();
 void UNet_SetGPUDevice(uint8_t device_id);
 
 UNet_Err UNet_LoadModel(UNetModel* model, char* model_filename, char* weight_filename);
 void UNet_Close(UNetModel model);
 
-UNet_Err UNet_SetTileShape(UNetModel model, int32_t* tile_shape);
-UNet_Err UNet_GetTileShape(UNetModel model, int32_t* tile_shape);
+void UNet_SetTileShape(UNetModel model, int32_t* tile_shape);
+void UNet_GetTileShape(UNetModel model, int32_t* tile_shape);
 UNet_Err UNet_TiledPredict(UNetModel model, int32_t* image_shape, float* image, float* score);
 
 UNet_Err UNet_GetID(UNetModel model, char *ident, uint32_t size);

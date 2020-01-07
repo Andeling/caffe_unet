@@ -83,7 +83,7 @@ int main() {
     printf("Finished in %.6f s.\n", time_elapsed);
 
     int32_t tileShape[2] = {528, 592};
-    ret = UNet_SetTileShape(model, (int32_t *)&tileShape);
+    UNet_SetTileShape(model, (int32_t *)&tileShape);
 
     // Get model info
     printf("Model info:\n");

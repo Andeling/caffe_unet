@@ -43,9 +43,12 @@ public:
 extern "C" {
 #endif
 
+void UNet_SetModeGPU() {
+  caffe::Caffe::set_mode(caffe::Caffe::GPU);
+}
+
 void UNet_SetGPUDevice(uint8_t device_id) {
     caffe::Caffe::SetDevice(device_id);
-    caffe::Caffe::set_mode(caffe::Caffe::GPU);
 }
 
 UNet_Err UNet_LoadModel(UNetModel* model, char* model_filename, char* weight_filename) {
@@ -203,7 +206,7 @@ void UNet_Close(UNetModel model) {
     delete m;
 }
 
-UNet_Err UNet_SetTileShape(UNetModel model, int32_t* tile_shape) {
+void UNet_SetTileShape(UNetModel model, int32_t* tile_shape) {
     using namespace caffe;
     
     class _UNetModel *m = (class _UNetModel *)model;
@@ -214,16 +217,13 @@ UNet_Err UNet_SetTileShape(UNetModel model, int32_t* tile_shape) {
               vector_cast<float>(m->dsFactor)));
     m->inTileShape = m->dsFactor * d4a_size + m->padIn;
     m->outTileShape = m->dsFactor * d4a_size + m->padOut;
-
-    return UNet_OK;
 }
 
-UNet_Err UNet_GetTileShape(UNetModel model, int32_t* tile_shape) {
+void UNet_GetTileShape(UNetModel model, int32_t* tile_shape) {
     class _UNetModel *m = (class _UNetModel *)model;
     for (int i = 0; i < m->n_dims; i++) {
         tile_shape[i] = m->outTileShape[i];
     }
-    return UNet_OK;
 }
 
 UNet_Err UNet_TiledPredict(UNetModel model, int32_t* image_shape, float* image, float* score) {
@@ -312,6 +312,9 @@ UNet_Err UNet_TiledPredict(UNetModel model, int32_t* image_shape, float* image, 
             m->padMirror);
     }
     memcpy(score, scoreBlob->cpu_data(), sizeof(float) * scoreBlobSize);
+
+    delete imageBlob;
+    delete scoreBlob;
     return UNet_OK;
 }
 
