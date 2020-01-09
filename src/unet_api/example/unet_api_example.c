@@ -62,7 +62,7 @@ void tiff_imwrite_u8(char *filename, uint8_t *buf, uint32_t width, uint32_t heig
 }
 
 int main() {
-    UNet_SetGPUDevice(0);
+    UNet_SetModeGPU();
 
     struct timespec time_start, time_end;
     float time_elapsed;
